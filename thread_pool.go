@@ -50,7 +50,7 @@ func refreshWaitingPool(w []Player) (newPool []Player) {
 }
 
 // 匹配一场游戏进程
-func match1Game(w waitingPool) (g gameThread, newWaitingPool []Player) {
+func match1Game(w waitingPool, g chan<- gameThread, newWaitingPool chan<- waitingPool) {
 
 	outOfOrder := shuffle(w)
 
@@ -60,12 +60,15 @@ func match1Game(w waitingPool) (g gameThread, newWaitingPool []Player) {
 	}
 
 	// 将游戏中的玩家移出，更新等待池
-	newWaitingPool = refreshWaitingPool(outOfOrder)
+	newWaitingPool <- refreshWaitingPool(outOfOrder)
 
 	// 取前十个player作为一个游戏进程
-	g = outOfOrder[:10]
+	g <- outOfOrder[:10]
+	fmt.Println("Now output players:", outOfOrder[:10])
 
-	return
+	// 模拟游戏需要2秒
+	time.Sleep(time.Second * 2)
+
 }
 
 // func main() {
@@ -76,13 +79,22 @@ func match1Game(w waitingPool) (g gameThread, newWaitingPool []Player) {
 // }
 
 func main() {
-	waiting := make(chan interface{}, 100)
-	gaming := make(chan interface{}, 100)
+	waiting := make(chan waitingPool, 100)
+	gaming := make(chan gameThread, 100)
 
+	wP := generate100Players()
 	// 游戏池中只开三个游戏进程
 	for i := 1; i <= 3; i++ {
-
+		go match1Game(wP, gaming, waiting)
 	}
+
+	for a := 1; a <= 9; a++ {
+
+		<-gaming
+		<-waiting
+	}
+	close(gaming)
+	close(waiting)
 }
 
 // //这个是工作线程，处理具体的业务逻辑，将jobs中的任务取出，处理后将处理结果放置在results中。
