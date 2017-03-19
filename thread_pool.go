@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -50,25 +51,27 @@ func refreshWaitingPool(w []Player) (newPool []Player) {
 }
 
 // 匹配一场游戏进程
-func match1Game(w waitingPool, g chan<- gameThread, newWaitingPool chan<- waitingPool) {
+func match1Game(w <-chan waitingPool, wg *sync.WaitGroup, g chan<- waitingPool, newWaitingPool chan<- waitingPool) {
 
-	outOfOrder := shuffle(w)
+	// outOfOrder := shuffle(w)
 
-	// 匹配成功后状态设为true
-	for i := 0; i < 10; i++ {
-		outOfOrder[i].Status = true
+	for j := range w {
+		// 匹配成功后状态设为true
+		for i := 0; i < 10; i++ {
+			j[i].Status = true
+		}
+
+		// 将游戏中的玩家移出，更新等待池
+		newWaitingPool <- refreshWaitingPool(j)
+
+		// 取前十个player作为一个游戏进程
+		g <- j[:10]
+		fmt.Println("Now output players:", j[:10])
+
+		// 模拟游戏需要2秒
+		time.Sleep(time.Second * 2)
 	}
-
-	// 将游戏中的玩家移出，更新等待池
-	newWaitingPool <- refreshWaitingPool(outOfOrder)
-
-	// 取前十个player作为一个游戏进程
-	g <- outOfOrder[:10]
-	fmt.Println("Now output players:", outOfOrder[:10])
-
-	// 模拟游戏需要2秒
-	time.Sleep(time.Second * 2)
-
+	wg.Done()
 }
 
 // func main() {
@@ -80,21 +83,25 @@ func match1Game(w waitingPool, g chan<- gameThread, newWaitingPool chan<- waitin
 
 func main() {
 	waiting := make(chan waitingPool, 100)
-	gaming := make(chan gameThread, 100)
+	gaming := make(chan waitingPool, 100)
+
+	var wg sync.WaitGroup
 
 	wP := generate100Players()
 	// 游戏池中只开三个游戏进程
+	w := wP
 	for i := 1; i <= 3; i++ {
-		go match1Game(wP, gaming, waiting)
+		w = shuffle(w)
+		go match1Game(w, &wg, gaming, waiting)
+		w <- waiting
 	}
 
 	for a := 1; a <= 9; a++ {
-
 		<-gaming
 		<-waiting
+		wg.Done()
 	}
-	close(gaming)
-	close(waiting)
+	wg.Wait()
 }
 
 // //这个是工作线程，处理具体的业务逻辑，将jobs中的任务取出，处理后将处理结果放置在results中。
